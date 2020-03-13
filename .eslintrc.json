@@ -1,0 +1,21 @@
+{
+  "root": true,
+  "extends": [
+    "standard",
+    "eslint:recommended",
+    "plugin:node/recommended"
+  ],
+  "env": {
+    "node": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2020
+  },
+  "rules": {
+    "comma-dangle": ["error", "always-multiline"],
+    "no-new": "off",
+    "camelcase": "off",
+    "semi": ["error", "always"],
+    "node/no-unpublished-require": "off"
+  }
+}

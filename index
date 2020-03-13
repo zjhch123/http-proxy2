@@ -1,48 +1,48 @@
 #!/usr/bin/env node
-const program = require('commander')
+const program = require('commander');
 
-const startServer = require('./server')
-const startClient = require('./client')
-const parseIP = require('./utils/parseIP')
+const startServer = require('./server');
+const startClient = require('./client');
+const parseIP = require('./utils/parseIP');
 
 const log = `\x1b[32m
 _                                              
 | |_  ____ ____ ___ ____   ____ ___ _   _ _   _ 
-|  _)/ ___)  _ (___)  _ \ / ___) _ ( \ / ) | | |
+|  _)/ ___)  _ (___)  _ \\ / ___) _ ( \\ / ) | | |
 | |_( (___| | | |  | | | | |  | |_| ) X (| |_| |
- \___)____) ||_/   | ||_/|_|   \___(_/ \_)\__  |
+ \\___)____) ||_/   | ||_/|_|   \\___(_/ \\_)\\__  |
           |_|      |_|                   (____/ \x1b[0m
-`
+`;
 
-console.log(log)
+console.log(log);
 
 program.command('client')
-      .description('run as client mode')
-      .requiredOption('-s, --server [server address, eg: 139.129.132.111:8080]', 'The IP address of remote server')
-      .requiredOption('-p, --port [local port, eg: 3333]', 'The local port')
-      .option('-n, --name [service name]', 'The service name, optional')
-      .action(({ server, port, name }) => {
-        const { serverIP, serverPort } = parseIP(server)
+  .description('run as client mode')
+  .requiredOption('-s, --server [server address, eg: 139.129.132.111:8080]', 'The IP address of remote server')
+  .requiredOption('-p, --port [local port, eg: 3333]', 'The local port')
+  .option('-n, --name [service name]', 'The service name, optional')
+  .action(({ server, port, name }) => {
+    const { serverIP, serverPort } = parseIP(server);
 
-        if (Object.prototype.toString.call(name) !== '[object String]') {
-          name = Math.random().toString(16).substr(2, 6)
-        }
+    if (Object.prototype.toString.call(name) !== '[object String]') {
+      name = Math.random().toString(16).substr(2, 6);
+    }
 
-        startClient({
-          remoteServer: serverIP,
-          services: {
-            [name]: {
-              remote_port: serverPort,
-              local_port: port,
-            }
-          }
-        })
-      })
+    startClient({
+      remoteServer: serverIP,
+      services: {
+        [name]: {
+          remote_port: serverPort,
+          local_port: port,
+        },
+      },
+    });
+  });
 
 program.command('server')
-      .description('run as server mode')
-      .action(() => {
-        startServer()
-      })
+  .description('run as server mode')
+  .action(() => {
+    startServer();
+  });
 
-program.parse(process.argv)
+program.parse(process.argv);
