@@ -1,52 +1,100 @@
-const net = require('net')
-const PacketHub = require('./PacketHub3')
-const util = require('./util')
-const requests = require('./requests')
-const Emit = require('./EventEmit')
-const colors = require('./colors')
+const net = require('net');
+const logger = require('../utils/logger');
 
-const log = util.log
-
-const startClient = (publicIP = '127.0.0.1', proxyToPort = 80) => {
-  const packetHub = new PacketHub()
-
-  const HOST = publicIP;
-  const PORT = 9999;
-
-  const client = new net.Socket();
-
-  client.connect(PORT, HOST, () => {
-    packetHub.start()
-    log(`与服务端: ${publicIP} 连接成功, 开始转发请求到本地${proxyToPort}端口`)
-  })
-
-  client.on('data', (data) => {
-    packetHub.push(data)
-  })
-
-  client.on('close', () => {
-    log('与服务端的连接被中断!')
-    packetHub.clear()
-  })
-
-  Emit.on('fullpacket', async (key, fullPacket) => {
-    const {
-      method,
-      path,
-      headers,
-      body
-    } = util.splitRequest(fullPacket)
-    log(`${colors.bgGreen(colors.black(method))} ${path}`)
-    const result = await requests({
-      host: '127.0.0.1',
-      port: proxyToPort,
-      path,
-      method,
-      headers,
-      body
-    })
-    client.write(util.createWrappedBuf(key, result))
-  })
+const local_host = '127.0.0.1'
+/*
+const config = {
+  remoteServer: '127.0.0.1',
+  remotePort: 9999,
 }
 
-module.exports = startClient
+const services = {
+  http: {
+    remote_port: 3333,
+    local_port: 8000,
+  },
+  ssh: {
+    remote_port: 4444,
+    local_port: 22,
+  }
+};
+*/
+
+const startClient = ({
+  config,
+  services,
+}) => {
+  let client;
+
+  function createConnection() {
+    logger.info(`客户端已就绪, 开始连接服务端, ip: ${config.remoteServer}`);
+    client = net.createConnection({
+      host: config.remoteServer,
+      port: config.remotePort,
+    }, () => {
+      client.write(JSON.stringify({ message: 'register', services }))
+    });
+    
+    client.on('data', (data) => {
+      try {
+        data = JSON.parse(data);
+    
+        const { message } = data;
+    
+        if (message === 'register') {
+          logger.info('连接服务端成功');
+        } else if (message === 'connect') {
+          const { proxySocketId, remote_port, local_port} = data;
+          const serverSocket = new net.Socket();
+          const clientSocket = new net.Socket();
+    
+          serverSocket.connect(config.remotePort, config.remoteServer, () => {
+            serverSocket.write(JSON.stringify({ message: 'connect', proxySocketId }));
+            clientSocket.connect(local_port, local_host);
+            clientSocket.pipe(serverSocket);
+            serverSocket.pipe(clientSocket);
+    
+            clientSocket.on('end', () => serverSocket.end());
+            clientSocket.on('error', () => serverSocket.end());
+            logger.info(`隧道建立完成, ${config.remoteServer}:${remote_port} <==> ${local_host}:${local_port}`)
+          })
+    
+          serverSocket.on('end', () => clientSocket.end())
+          serverSocket.on('error', () => clientSocket.end())
+        }
+        return
+      } catch (e) {
+      }
+      client.end()
+    });
+
+    client.on('error', (e) => {
+      logger.error(e.message)
+    })
+    client.on('end', () => {
+      logger.info('从远程服务器断开连接')
+    })
+  }
+
+  createConnection();
+
+  setInterval(() => {
+    if (client && client.readyState === 'closed') {
+      client.end();
+      logger.info('尝试重新连接远程服务器')
+      createConnection();
+    }
+  }, 2000)
+}
+
+module.exports = ({
+  remoteServer,
+  services,
+}) => {
+  const config = {
+    remoteServer,
+    remotePort: 9999,
+  };
+
+  startClient({ config, services });
+}

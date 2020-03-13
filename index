@@ -1,67 +1,48 @@
 #!/usr/bin/env node
-
-const server = require('./server')
-const client = require('./client')
-
 const program = require('commander')
 
-const package = require('./package.json')
+const startServer = require('./server')
+const startClient = require('./client')
+const parseIP = require('./utils/parseIP')
 
-
-const log = `
-_     _   _                                         
-| |   | | | |                                        
-| |__ | |_| |_ _ __ ______ _ __  _ __ _____  ___   _ 
-| '_ \| __| __| '_ \______| '_ \| '__/ _ \ \/ / | | |
-| | | | |_| |_| |_) |     | |_) | | | (_) >  <| |_| |
-|_| |_|\__|\__| .__/      | .__/|_|  \___/_/\_\\__, |
-              | |         | |                   __/ |
-              |_|         |_|                  |___/ 
+const log = `\x1b[32m
+_                                              
+| |_  ____ ____ ___ ____   ____ ___ _   _ _   _ 
+|  _)/ ___)  _ (___)  _ \ / ___) _ ( \ / ) | | |
+| |_( (___| | | |  | | | | |  | |_| ) X (| |_| |
+ \___)____) ||_/   | ||_/|_|   \___(_/ \_)\__  |
+          |_|      |_|                   (____/ \x1b[0m
 `
 
-console.log("\x1b[32m", log, "\x1b[0m")
-
-program
-  .version(package.version)
-
-program.command('server')
-  .description('在指定端口开启服务端监听')
-  .option('-p, --port <port>', '指定的端口')
-  .action(({
-    port
-  }) => {
-    if (!port) {
-      console.log('Please input port!')
-      return
-    }
-    if (isNaN(Number(port))) {
-      console.log('Please input valid port!')
-      return
-    }
-    server(~~port)
-  })
+console.log(log)
 
 program.command('client')
-  .description('连接指定的服务端, 并将请求转发至本地指定端口')
-  .option('-s, --server <server>', '指定的服务端IP')
-  .option('-p, --port <port>', '指定的端口')
-  .action(({
-    server,
-    port
-  }) => {
-    if (!port) {
-      console.log('Please input port!')
-      return
-    }
-    if (isNaN(Number(port))) {
-      console.log('Please input valid port!')
-      return
-    }
-    if (!server) {
-      console.log('Please input server ip')
-    }
-    client(server, ~~port)
-  })
+      .description('run as client mode')
+      .requiredOption('-s, --server [server address, eg: 139.129.132.111:8080]', 'The IP address of remote server')
+      .requiredOption('-p, --port [local port, eg: 3333]', 'The local port')
+      .option('-n, --name [service name]', 'The service name, optional')
+      .action(({ server, port, name }) => {
+        const { serverIP, serverPort } = parseIP(server)
 
+        if (Object.prototype.toString.call(name) !== '[object String]') {
+          name = Math.random().toString(16).substr(2, 6)
+        }
+
+        startClient({
+          remoteServer: serverIP,
+          services: {
+            [name]: {
+              remote_port: serverPort,
+              local_port: port,
+            }
+          }
+        })
+      })
+
+program.command('server')
+      .description('run as server mode')
+      .action(() => {
+        startServer()
+      })
 
 program.parse(process.argv)

@@ -1,129 +1,113 @@
-const net = require('net')
-const http = require('http')
-const colors = require('./colors')
-const Emit = require('./EventEmit')
-const PacketHub = require('./PacketHub3')
-const util = require('./util')
+const net = require('net');
+const logger = require('../utils/logger');
 
-const log = util.log
+const clientSockets = {};
+const proxySockets = {};
+const proxyServices = {}; // 记录所有需要转发的服务
 
-const startServer = (port = 8081) => {
-  const packetHub = new PacketHub()
+const startProxyServer = ({
+  serviceName,
+  clientSocketId,
+  remote_port,
+  local_port,
+}) => {
+  const proxyServer = net.createServer((proxySocket) => {
+    if (!clientSockets[clientSocketId]) { proxySocket.end(); }
 
-  let tunnelSocket = null
-  let serverResponses = {}
-  let tunnel = null
+    const proxySocketId = [proxySocket.remoteAddress, proxySocket.remoteFamily, proxySocket.remotePort].join("_");
+    proxySockets[proxySocketId] = { proxy: proxySocket, client: null };
+    clientSockets[clientSocketId].write(JSON.stringify({ proxySocketId, message: 'connect', remote_port, local_port }));
 
-  const createConnectionToTunnel = () => {
-    if (!!tunnel) {
-      return
-    }
-    tunnel = net.createServer(socket => {
-      log(`客户机连接成功!`)
-      packetHub.start()
-      tunnelSocket = socket
-      socket.on('data', (data) => { // 接收到内网主机发来的消息, 内网主机发来的消息是已经包裹完毕的
-        packetHub.push(data)
-      })
-      socket.on('close', () => {
-        tunnel.close()
-        tunnel = null
-        tunnelSocket = null
-        packetHub.clear()
-        log('客户机断开，3秒后重新开始监听客户机连接')
-        setTimeout(() => {
-          log('重新开始监听')
-          createConnectionToTunnel()
-        }, 3000)
-      })
-    }).listen(9999)
-  }
-
-  createConnectionToTunnel()
-
-  const server = http.createServer((request, response) => {
-    const method = request.method
-    const path = request.url
-    const headers = request.headers
-    const version = request.httpVersion
-    const key = util.generateKey()
-
-    serverResponses[key] = response
-
-    if (method === 'POST') {
-      let body = []
-      request.on('data', (chunk) => {
-        body.push(chunk)
-      })
-      request.on('end', () => {
-        Emit.emit('recvReq', {
-          key,
-          method,
-          version,
-          path,
-          headers,
-          body: Buffer.concat(body),
-        })
-      })
-    } else {
-      Emit.emit('recvReq', {
-        key,
-        method,
-        version,
-        path,
-        headers
-      })
-    }
-  })
-
-  log(`开始监听${port}端口`)
-  server.setMaxListeners(5)
-  server.listen(port)
-
-  Emit.on('recvReq', ({
-    key,
-    method,
-    version,
-    path,
-    headers,
-    body = ''
-  }) => {
-    const header = util.generateRequest({
-      method,
-      version,
-      path,
-      headers,
-      body
-    })
-    const buf = header
-    const packet = util.createWrappedBuf(key, buf)
-    if (tunnelSocket) {
-      log(`${colors.bgRed(colors.white('Proxy'))} ${colors.bgGreen(colors.black(method))} ${path}`)
-      tunnelSocket.write(packet)
-    } else {
-      serverResponses[key].end('There is no client, please connect client to proxy request!')
-    }
-  })
-
-  Emit.on('fullpacket', (key, fullPacket) => {
-    const {
-      body,
-      headers,
-      status
-    } = util.splitResponse(fullPacket)
-
-    if (serverResponses[key]) {
-      try {
-        serverResponses[key].writeHead(status, headers)
-        serverResponses[key].end(body)
-      } catch (e) {
-        serverResponses[key].end()
-        log(e)
+    proxySocket.on('error', () => proxySocket.end())
+    proxySocket.on('end', () => {
+      if (proxySockets[proxySocketId]) {
+        proxySockets[proxySocketId].proxy && proxySockets[proxySocketId].proxy.end()
+        proxySockets[proxySocketId].client && proxySockets[proxySocketId].client.end()
+        delete proxySockets[proxySocketId]
       }
-      delete serverResponses[key]
-    }
-  })
+    });
+  });
+
+  proxyServer.listen(remote_port, '0.0.0.0', () => {
+    logger.info(`转发服务: ${serviceName} 启动成功, local: ${remote_port} <==> ${local_port} :remote`);
+  });
+
+  return proxyServer;
 }
 
+const startServer = () => {
+  const server = net.createServer((socket) => {
+    const id = [socket.remoteAddress, socket.remoteFamily, socket.remotePort].join("_");
+    if (!clientSockets[id]) {
+      clientSockets[id] = socket;
+  
+      socket.on('data', (data) => {
+        try {
+          try {
+            data = JSON.parse(data);
+          } catch (e) {
+            return
+          }
+  
+          logger.info(`客户端连接成功, ${id}`);
+          const { message } = data;
+  
+          if (message === 'register') {
+            const { services } = data;
+  
+            for (let serviceName in services) {
+              if (!proxyServices[serviceName]) {
+                const service = services[serviceName];
+                service.serviceName = serviceName;
+                service.clientSocket = socket;
+                service.clientSocketId = id;
+                service.proxyServer = startProxyServer(service);
+                proxyServices[serviceName] = service;
+              }
+            }
+            return socket.write(JSON.stringify({ message: 'register' }));
+          } else if (message === 'connect') {
+            const { proxySocketId } = data;
+            if (proxySockets && proxySockets[proxySocketId].proxy && !proxySockets[proxySocketId].client) {
+              const proxySocket = proxySockets[proxySocketId];
+  
+              proxySocket.client = socket;
+              proxySocket.client.pipe(proxySocket.proxy);
+              proxySocket.proxy.pipe(proxySocket.client);
+              return;
+            }
+          }
+        } catch (e) {
+  
+        }
+        socket.end();
+      });
+  
+      socket.on('error', () => {
+        socket.end();
+      });
+  
+      socket.on('end', () => {
+        for (let serviceName in proxyServices) {
+          const service = proxyServices[serviceName]
+          const { proxyServer, clientSocketId } = service
+          if (clientSocketId === id) {
+            proxyServer.close()
+            logger.info(`转发: ${serviceName} 已关闭`)
+            delete proxyServices[serviceName]
+          }
+        }
+  
+        clientSockets[id].end()
+        delete clientSockets[id]
+        logger.info(`客户端: ${id} 已断开连接`)
+      });
+    }
+  });
+  
+  server.listen(9999, '0.0.0.0', () => {
+    logger.info('等待客户端连接');
+  });
+}
 
 module.exports = startServer
