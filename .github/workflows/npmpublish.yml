@@ -16,7 +16,7 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Lint
-        run: npm lint
+        run: npm run lint
       - name: Publish
         run: npm publish
         env:
