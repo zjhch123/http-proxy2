@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 const program = require('commander');
-
+const { version } = require('./package.json');
 const startServer = require('./server');
 const startClient = require('./client');
 const parseIP = require('./utils/parseIP');
@@ -44,5 +44,7 @@ program.command('server')
   .action(() => {
     startServer();
   });
+
+program.version(version);
 
 program.parse(process.argv);
