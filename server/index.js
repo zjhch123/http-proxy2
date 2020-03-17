@@ -18,7 +18,7 @@ const startProxyServer = ({
     proxySockets[proxySocketId] = { proxy: proxySocket, client: null };
     clientSockets[clientSocketId].write(JSON.stringify({ proxySocketId, message: 'connect', remote_port, local_port }));
 
-    proxySocket.on('error', () => proxySocket.end());
+    proxySocket.on('error', (e) => { console.log(e); proxySocket.end(); });
     proxySocket.on('end', () => {
       if (proxySockets[proxySocketId]) {
         proxySockets[proxySocketId].proxy && proxySockets[proxySocketId].proxy.end();
