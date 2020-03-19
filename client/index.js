@@ -1,5 +1,6 @@
 const net = require('net');
 const logger = require('../utils/logger');
+const MessageCenter = require('../common/MessageCenter');
 
 const local_host = '127.0.0.1';
 /*
@@ -28,6 +29,7 @@ const startClient = ({
 
   function createConnection () {
     logger.info(`客户端已就绪, 开始连接服务端, ip: ${config.remoteServer}`);
+    const msgCenter = new MessageCenter();
     client = net.createConnection({
       host: config.remoteServer,
       port: config.remotePort,
@@ -36,8 +38,25 @@ const startClient = ({
     });
 
     client.on('data', (data) => {
+      msgCenter.push(data);
+    });
+    client.on('error', (e) => {
+      logger.error(e.message);
+    });
+    client.on('end', () => {
+      logger.info('从远程服务器断开连接');
+    });
+
+    msgCenter.on('data', (data) => {
       try {
-        data = JSON.parse(data);
+        try {
+          data = JSON.parse(data.toString().trim());
+        } catch (e) {
+          console.log(e);
+          console.log(data);
+          console.log(data.toString());
+          return;
+        }
 
         const { message } = data;
 
@@ -67,13 +86,6 @@ const startClient = ({
         // Nothing to do
       }
       client.end();
-    });
-
-    client.on('error', (e) => {
-      logger.error(e.message);
-    });
-    client.on('end', () => {
-      logger.info('从远程服务器断开连接');
     });
   }
 
