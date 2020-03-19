@@ -1,6 +1,6 @@
 {
   "name": "tcp-proxy2",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "一个可用于内网穿透的TCP请求代理工具",
   "main": "index.js",
   "scripts": {
