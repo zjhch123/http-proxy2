@@ -1,5 +1,6 @@
 const net = require('net');
 const logger = require('../utils/logger');
+const BB = require('../common/bb');
 
 const clientSockets = {};
 const proxySockets = {};
@@ -16,9 +17,9 @@ const startProxyServer = ({
 
     const proxySocketId = [proxySocket.remoteAddress, proxySocket.remoteFamily, proxySocket.remotePort].join('_');
     proxySockets[proxySocketId] = { proxy: proxySocket, client: null };
-    clientSockets[clientSocketId].write(JSON.stringify({ proxySocketId, message: 'connect', remote_port, local_port }));
+    clientSockets[clientSocketId].write(BB.pack(JSON.stringify({ proxySocketId, message: 'connect', remote_port, local_port })).toBuffer());
 
-    proxySocket.on('error', (e) => { console.log(e); proxySocket.end(); });
+    proxySocket.on('error', (e) => { proxySocket.end(); });
     proxySocket.on('end', () => {
       if (proxySockets[proxySocketId]) {
         proxySockets[proxySocketId].proxy && proxySockets[proxySocketId].proxy.end();
@@ -65,7 +66,7 @@ const startServer = () => {
                 proxyServices[serviceName] = service;
               }
             }
-            return socket.write(JSON.stringify({ message: 'register' }));
+            return socket.write(BB.pack(JSON.stringify({ message: 'register' })).toBuffer());
           } else if (message === 'connect') {
             const { proxySocketId } = data;
             if (proxySockets && proxySockets[proxySocketId].proxy && !proxySockets[proxySocketId].client) {

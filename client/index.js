@@ -1,5 +1,6 @@
 const net = require('net');
 const logger = require('../utils/logger');
+const MessageCenter = require('../common/MessageCenter');
 
 const local_host = '127.0.0.1';
 /*
@@ -20,6 +21,8 @@ const services = {
 };
 */
 
+const msgCenter = new MessageCenter();
+
 const startClient = ({
   config,
   services,
@@ -36,37 +39,7 @@ const startClient = ({
     });
 
     client.on('data', (data) => {
-      try {
-        data = JSON.parse(data);
-
-        const { message } = data;
-
-        if (message === 'register') {
-          logger.info('连接服务端成功');
-        } else if (message === 'connect') {
-          const { proxySocketId, remote_port, local_port } = data;
-          const serverSocket = new net.Socket();
-          const clientSocket = new net.Socket();
-
-          serverSocket.connect(config.remotePort, config.remoteServer, () => {
-            serverSocket.write(JSON.stringify({ message: 'connect', proxySocketId }));
-            clientSocket.connect(local_port, local_host);
-            clientSocket.pipe(serverSocket);
-            serverSocket.pipe(clientSocket);
-
-            clientSocket.on('end', () => serverSocket.end());
-            clientSocket.on('error', () => serverSocket.end());
-            logger.info(`隧道建立完成, ${config.remoteServer}:${remote_port} <==> ${local_host}:${local_port}`);
-          });
-
-          serverSocket.on('end', () => clientSocket.end());
-          serverSocket.on('error', () => clientSocket.end());
-        }
-        return;
-      } catch (e) {
-        // Nothing to do
-      }
-      client.end();
+      msgCenter.push(data);
     });
 
     client.on('error', (e) => {
@@ -76,6 +49,45 @@ const startClient = ({
       logger.info('从远程服务器断开连接');
     });
   }
+
+  msgCenter.on('data', (data) => {
+    try {
+      try {
+        data = JSON.parse(data);
+      } catch (e) {
+        console.log(data.toString());
+        return;
+      }
+
+      const { message } = data;
+
+      if (message === 'register') {
+        logger.info('连接服务端成功');
+      } else if (message === 'connect') {
+        const { proxySocketId, remote_port, local_port } = data;
+        const serverSocket = new net.Socket();
+        const clientSocket = new net.Socket();
+
+        serverSocket.connect(config.remotePort, config.remoteServer, () => {
+          serverSocket.write(JSON.stringify({ message: 'connect', proxySocketId }));
+          clientSocket.connect(local_port, local_host);
+          clientSocket.pipe(serverSocket);
+          serverSocket.pipe(clientSocket);
+
+          clientSocket.on('end', () => serverSocket.end());
+          clientSocket.on('error', () => serverSocket.end());
+          logger.info(`隧道建立完成, ${config.remoteServer}:${remote_port} <==> ${local_host}:${local_port}`);
+        });
+
+        serverSocket.on('end', () => clientSocket.end());
+        serverSocket.on('error', () => clientSocket.end());
+      }
+      return;
+    } catch (e) {
+      // Nothing to do
+    }
+    client.end();
+  });
 
   createConnection();
 
